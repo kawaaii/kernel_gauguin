@@ -104,6 +104,7 @@ struct adc_tm_sensor {
 	int				meas_en;		/* PMIC7 */
 	struct workqueue_struct		*req_wq;
 	struct work_struct		work;
+	int				emul_temperature;
 };
 
 struct adc_tm_client_info {
@@ -138,6 +139,7 @@ struct adc_tm_ops {
 	void (*notify)(struct adc_tm_sensor *adc_tm);
 	int (*interrupts_reg)(struct adc_tm_chip *chip);
 	int (*shutdown)(struct adc_tm_chip *chip);
+	int (*set_emul_temp)(struct adc_tm_sensor *sensor, int temp);
 };
 
 struct adc_tm_chip {

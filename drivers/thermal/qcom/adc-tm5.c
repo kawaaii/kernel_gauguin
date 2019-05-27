@@ -81,9 +81,16 @@ static struct adc_tm_reverse_scale_fn adc_tm_rscale_fn[] = {
 static int adc_tm5_get_temp(struct adc_tm_sensor *sensor, int *temp)
 {
 	int ret, milli_celsius;
+	int emul_temp;
 
 	if (!sensor || !sensor->adc)
 		return -EINVAL;
+
+	emul_temp = sensor->emul_temperature;
+	if (emul_temp) {
+		*temp = emul_temp;
+		return 0;
+	}
 
 	ret = iio_read_channel_processed(sensor->adc, &milli_celsius);
 	if (ret < 0)
@@ -91,6 +98,12 @@ static int adc_tm5_get_temp(struct adc_tm_sensor *sensor, int *temp)
 
 	*temp = milli_celsius;
 
+	return 0;
+}
+
+static int adc_tm5_set_emul_temp(struct adc_tm_sensor *sensor, int emul_temp)
+{
+	sensor->emul_temperature = emul_temp;
 	return 0;
 }
 
@@ -762,6 +775,7 @@ static int adc_tm5_set_trip_temp(struct adc_tm_sensor *sensor,
 	int ret;
 	uint32_t btm_chan = 0, btm_chan_idx = 0, mask = 0;
 	unsigned long flags;
+	int emul_temp;
 
 	if (!sensor)
 		return -EINVAL;
@@ -780,6 +794,13 @@ static int adc_tm5_set_trip_temp(struct adc_tm_sensor *sensor,
 	if ((high_temp == INT_MAX) && (low_temp == INT_MIN)) {
 		pr_err("No trips to set\n");
 		return -EINVAL;
+	}
+
+	/* Set threshold to extremely value while emul temp set */
+	emul_temp = sensor->emul_temperature;
+	if (emul_temp) {
+		high_temp = INT_MAX;
+		low_temp = INT_MIN;
 	}
 
 	pr_debug("requested a low temp- %d and high temp- %d\n",
@@ -1128,6 +1149,7 @@ static const struct adc_tm_ops ops_adc_tm5 = {
 	.set_trips	= adc_tm5_set_trip_temp,
 	.interrupts_reg = adc_tm5_register_interrupts,
 	.get_temp	= adc_tm5_get_temp,
+	.set_emul_temp	= adc_tm5_set_emul_temp,
 	.channel_measure = adc_tm_5_channel_measure,
 	.disable_chan = adc_tm_5_disable_chan_meas,
 	.notify = notify_adc_tm5_fn,
