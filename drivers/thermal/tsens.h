@@ -137,6 +137,7 @@ struct tsens_sensor {
 	struct tsens_context		thr_state;
 	int				offset;
 	int				slope;
+	int				emul_temperature;
 };
 
 /**
@@ -153,6 +154,7 @@ struct tsens_ops {
 								int *temp);
 	int (*sensor_en)(struct tsens_device *tmdev, u32 sensor_id);
 	int (*calibrate)(struct tsens_device *tmdev);
+	int (*set_emul_temp)(struct tsens_sensor *tm_sensor, int *temp);
 };
 
 struct tsens_irqs {
