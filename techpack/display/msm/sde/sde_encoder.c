@@ -5025,6 +5025,8 @@ static int _sde_encoder_reset_ctl_hw(struct drm_encoder *drm_enc)
 
 void sde_encoder_kickoff(struct drm_encoder *drm_enc, bool is_error)
 {
+	static bool has_run;
+	struct sde_connector *sde_conn;
 	struct sde_encoder_virt *sde_enc;
 	struct sde_encoder_phys *phys;
 	ktime_t wakeup_time;
@@ -5058,6 +5060,11 @@ void sde_encoder_kickoff(struct drm_encoder *drm_enc, bool is_error)
 		SDE_EVT32_VERBOSE(ktime_to_ms(wakeup_time));
 		mod_timer(&sde_enc->vsync_event_timer,
 				nsecs_to_jiffies(ktime_to_ns(wakeup_time)));
+	}
+
+	if (unlikely(!has_run)) {
+		has_run = true;
+		_sde_connector_report_panel_dead(sde_conn, false);
 	}
 
 	SDE_ATRACE_END("encoder_kickoff");
