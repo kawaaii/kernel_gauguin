@@ -175,6 +175,14 @@ struct drm_panel_esd_config {
 	int esd_err_irq_gpio;
 };
 
+struct dsi_read_config {
+	bool is_read;
+	struct dsi_panel_cmd_set read_cmd;
+	u32 cmds_rlen;
+	u32 valid_bits;
+	u8 rbuf[256];
+};
+
 struct dsi_panel {
 	const char *name;
 	const char *type;
@@ -224,6 +232,10 @@ struct dsi_panel {
 	enum dsi_dms_mode dms_mode;
 
 	bool sync_broadcast_en;
+
+	bool is_tddi_flag;
+	bool tddi_doubleclick_flag;
+	bool panel_dead_flag;
 
 	int panel_test_gpio;
 	int power_mode;
@@ -347,5 +359,13 @@ void dsi_panel_ext_bridge_put(struct dsi_panel *panel);
 
 void dsi_panel_calc_dsi_transfer_time(struct dsi_host_common_cfg *config,
 		struct dsi_display_mode *mode, u32 frame_threshold_us);
+
+ssize_t dsi_panel_lockdown_info_read(unsigned char *plockdowninfo);
+
+int dsi_panel_write_cmd_set(struct dsi_panel *panel, struct dsi_panel_cmd_set *cmd_sets);
+
+int dsi_panel_read_cmd_set(struct dsi_panel *panel, struct dsi_read_config *read_config);
+
+void dsi_panel_doubleclick_enable(bool on);
 
 #endif /* _DSI_PANEL_H_ */
