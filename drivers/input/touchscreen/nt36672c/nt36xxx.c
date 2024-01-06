@@ -30,7 +30,7 @@
 #include <linux/of_irq.h>
 #include <linux/debugfs.h>
 #include "../spi-xiaomi-tp.h"
-#include <drm/drm_notifier_mi.h>
+#include <drm/drm_notifier.h>
 #include <linux/init.h>
 
 #include <linux/notifier.h>
@@ -2187,7 +2187,7 @@ static int32_t nvt_ts_probe(struct platform_device *pdev)
 	/*INIT_WORK(&ts->suspend_work, nvt_suspend_work);*/
 
 	ts->drm_notif.notifier_call = nvt_drm_notifier_callback;
-	ret = mi_drm_register_client(&ts->drm_notif);
+	ret = drm_register_client(&ts->drm_notif);
 	if(ret) {
 		NVT_ERR("register drm_notifier failed. ret=%d\n", ret);
 		goto err_register_drm_notif_failed;
@@ -2208,7 +2208,7 @@ static int32_t nvt_ts_probe(struct platform_device *pdev)
 
 	return 0;
 
-	if (mi_drm_unregister_client(&ts->drm_notif))
+	if (drm_unregister_client(&ts->drm_notif))
 		NVT_ERR("Error occurred while unregistering drm_notifier.\n");
 err_register_drm_notif_failed:
 	destroy_workqueue(ts->event_wq);
@@ -2293,7 +2293,7 @@ static int32_t nvt_ts_remove(struct platform_device *pdev)
 {
 	NVT_LOG("Removing driver...\n");
 
-	if (mi_drm_unregister_client(&ts->drm_notif))
+	if (drm_unregister_client(&ts->drm_notif))
 		NVT_ERR("Error occurred while unregistering drm_notifier.\n");
 #ifndef NVT_SAVE_TESTDATA_IN_FILE
 	nvt_test_data_proc_deinit();
@@ -2359,7 +2359,7 @@ static void nvt_ts_shutdown(struct platform_device *pdev)
 
 	nvt_irq_enable(false);
 
-	if (mi_drm_unregister_client(&ts->drm_notif))
+	if (drm_unregister_client(&ts->drm_notif))
 		NVT_ERR("Error occurred while unregistering drm_notifier.\n");
 #if NVT_TOUCH_MP
 	nvt_mp_proc_deinit();
@@ -2567,28 +2567,27 @@ Exit:
 
 static int nvt_drm_notifier_callback(struct notifier_block *self, unsigned long event, void *data)
 {
-	struct mi_drm_notifier *evdata = data;
+	struct drm_notify_data *evdata = data;
 	int *blank;
 	struct nvt_ts_data *ts_data=
 		container_of(self, struct nvt_ts_data, drm_notif);
 
-	if (!evdata || (evdata->id != 0))
+	if (!evdata || !evdata->data || !ts)
 		return 0;
 
-	if (evdata->data && ts_data) {
-		blank = evdata->data;
-		if (event == MI_DRM_EARLY_EVENT_BLANK) {
-			if (*blank == MI_DRM_BLANK_POWERDOWN) {
-				NVT_LOG("event=%lu, *blank=%d\n", event, *blank);
-				flush_workqueue(ts_data->event_wq);
-				nvt_ts_suspend(&ts_data->client->dev);
-			}
-		} else if (event == MI_DRM_EVENT_BLANK) {
-			if (*blank == MI_DRM_BLANK_UNBLANK) {
-				NVT_LOG("event=%lu, *blank=%d\n", event, *blank);
-				flush_workqueue(ts_data->event_wq);
-				queue_work(ts_data->event_wq, &ts_data->resume_work);
-			}
+	blank = evdata->data;
+
+	if (event == DRM_EARLY_EVENT_BLANK) {
+		if (*blank == DRM_BLANK_POWERDOWN) {
+			NVT_LOG("event=%lu, *blank=%d\n", event, *blank);
+			flush_workqueue(ts_data->event_wq);
+			nvt_ts_suspend(&ts_data->client->dev);
+		}
+	} else if (event == DRM_EVENT_BLANK) {
+		if (*blank == DRM_BLANK_UNBLANK) {
+			NVT_LOG("event=%lu, *blank=%d\n", event, *blank);
+			flush_workqueue(ts_data->event_wq);
+			queue_work(ts_data->event_wq, &ts_data->resume_work);
 		}
 	}
 	return 0;
