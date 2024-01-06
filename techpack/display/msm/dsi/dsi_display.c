@@ -550,6 +550,41 @@ error:
 	return rc;
 }
 
+#define to_dsi_bridge(x)     container_of((x), struct dsi_bridge, base)
+ssize_t dsi_display_panel_info_read(struct drm_connector *connector,
+			char *buf)
+{
+	struct dsi_display *display = NULL;
+	struct dsi_bridge *c_bridge = NULL;
+	char *pname = NULL;
+	ssize_t ret = 0;
+
+	if (!connector || !connector->encoder || !connector->encoder->bridge) {
+		pr_err("Invalid invalid connector/encoder/bridge ptr\n");
+		return -EINVAL;
+	}
+
+	c_bridge =  to_dsi_bridge(connector->encoder->bridge);
+	display = c_bridge->display;
+	if (!display || !display->panel) {
+		pr_err("Invalid display/panel ptr\n");
+		return -EINVAL;
+	}
+
+	if (display->name) {
+		/* find the last occurrence of a character in a string */
+		pname = strrchr(display->name, ',');
+		if (pname && ++pname)
+			ret = snprintf(buf, PAGE_SIZE, "panel_name=%s\n", pname);
+		else
+			ret = snprintf(buf, PAGE_SIZE, "panel_name=%s\n", display->name);
+	} else {
+		ret = snprintf(buf, PAGE_SIZE, "panel_name=%s\n", "null");
+	}
+
+	return ret;
+}
+
 static bool dsi_display_validate_reg_read(struct dsi_panel *panel)
 {
 	int i, j = 0;

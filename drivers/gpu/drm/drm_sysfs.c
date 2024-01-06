@@ -229,16 +229,27 @@ static ssize_t modes_show(struct device *device,
 	return written;
 }
 
+ssize_t dsi_display_panel_info_read(struct drm_connector *connector, char *buf);
+
+static ssize_t panel_info_show(struct device *device,
+			       struct device_attribute *attr, char *buf)
+{
+	struct drm_connector *connector = to_drm_connector(device);
+	return dsi_display_panel_info_read(connector, buf);
+}
+
 static DEVICE_ATTR_RW(status);
 static DEVICE_ATTR_RO(enabled);
 static DEVICE_ATTR_RO(dpms);
 static DEVICE_ATTR_RO(modes);
+static DEVICE_ATTR_RO(panel_info);
 
 static struct attribute *connector_dev_attrs[] = {
 	&dev_attr_status.attr,
 	&dev_attr_enabled.attr,
 	&dev_attr_dpms.attr,
 	&dev_attr_modes.attr,
+	&dev_attr_panel_info.attr,
 	NULL
 };
 
