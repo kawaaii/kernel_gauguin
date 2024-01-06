@@ -71,6 +71,8 @@
 /* ---Customerized func.--- */
 #define NVT_TOUCH_PROC 1
 #define NVT_TOUCH_EXT_PROC 1
+#define NVT_TOUCH_MP 1
+#define NVT_TOUCH_MP_SETTING_CRITERIA_FROM_CSV 1
 #define MT_PROTOCOL_B 1
 #define WAKEUP_GESTURE 1
 #define FUNCPAGE_PALM 4
@@ -85,11 +87,10 @@
 #define DEFAULT_DEBUG_FW_NAME "novatek_debug_fw.bin"
 #define DEFAULT_DEBUG_MP_NAME "novatek_debug_mp.bin"
 
-extern int touch_fw_override;
 
 /* ---ESD Protect.--- */
 #define NVT_TOUCH_ESD_PROTECT 1
-#define NVT_TOUCH_ESD_CHECK_PERIOD 125		/* ms */
+#define NVT_TOUCH_ESD_CHECK_PERIOD 1500	/* ms */
 #define NVT_TOUCH_WDT_RECOVERY 1
 #define NVT_TOUCH_ESD_DISP_RECOVERY 1
 
@@ -145,6 +146,9 @@ struct nvt_ts_data {
 	struct pinctrl *ts_pinctrl;
 	struct pinctrl_state *pinctrl_state_active;
 	struct pinctrl_state *pinctrl_state_suspend;
+#ifndef NVT_SAVE_TESTDATA_IN_FILE
+	void *testdata;
+#endif
 	int db_wakeup;
 	bool lkdown_readed;
 	u8 lockdown_info[NVT_LOCKDOWN_SIZE];
@@ -235,5 +239,4 @@ int32_t nvt_set_pocket_palm_switch(uint8_t pocket_palm_switch);
 #if NVT_TOUCH_ESD_PROTECT
 extern void nvt_esd_check_enable(uint8_t enable);
 #endif /* #if NVT_TOUCH_ESD_PROTECT */
-extern int panel_is_tianma;
 #endif /* _LINUX_NVT_TOUCH_H */

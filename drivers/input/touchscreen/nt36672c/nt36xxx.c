@@ -30,13 +30,16 @@
 #include <linux/of_irq.h>
 #include <linux/debugfs.h>
 #include "../spi-xiaomi-tp.h"
-#include <drm/drm_notifier_mi.h>
+#include <drm/drm_notifier.h>
 #include <linux/init.h>
 
 #include <linux/notifier.h>
 #include <linux/fb.h>
 
 #include "nt36xxx.h"
+#ifndef NVT_SAVE_TESTDATA_IN_FILE
+#include "nt36xxx_mp_ctrlram.h"
+#endif
 #if NVT_TOUCH_ESD_PROTECT
 #include <linux/jiffies.h>
 #endif /* #if NVT_TOUCH_ESD_PROTECT */
@@ -53,13 +56,16 @@ static struct workqueue_struct *nvt_esd_check_wq;
 static unsigned long irq_timer = 0;
 uint8_t esd_check = false;
 uint8_t esd_retry = 0;
-static int esd_check_force = 0;
-static int esd_check_scale = 8;
 #endif /* #if NVT_TOUCH_ESD_PROTECT */
 
 #if NVT_TOUCH_EXT_PROC
 extern int32_t nvt_extra_proc_init(void);
 extern void nvt_extra_proc_deinit(void);
+#endif
+
+#if NVT_TOUCH_MP
+extern int32_t nvt_mp_proc_init(void);
+extern void nvt_mp_proc_deinit(void);
 #endif
 
 struct nvt_ts_data *ts;
@@ -73,6 +79,7 @@ extern void Boot_Update_Firmware(struct work_struct *work);
 static int nvt_drm_notifier_callback(struct notifier_block *self, unsigned long event, void *data);
 static int32_t nvt_ts_suspend(struct device *dev);
 static int32_t nvt_ts_resume(struct device *dev);
+extern int dsi_panel_lockdown_info_read(unsigned char *plockdowninfo);
 extern void dsi_panel_doubleclick_enable(bool on);
 uint32_t ENG_RST_ADDR  = 0x7FFF80;
 uint32_t SWRST_N8_ADDR = 0; /* read from dtsi */
@@ -1148,36 +1155,9 @@ static bool nvt_cmds_panel_info(void)
 		if (!strncmp(display_node, "qcom,mdss_dsi_j17_36_02_0a_dsc_video",
 					strlen("qcom,mdss_dsi_j17_36_02_0a_dsc_video"))) {
 			panel_id = true;
-			panel_is_tianma = 1;
 		}
 	}
 	return panel_id;
-}
-
-static inline int dsi_panel_lockdown_info_read(unsigned char *plockdowninfo)
-{
-	if (nvt_cmds_panel_info()) {
-		NVT_LOG("%s: lockdown panel is tianma\n", __func__);
-		plockdowninfo[0] = 0x46;
-		plockdowninfo[1] = 0x36;
-		plockdowninfo[2] = 0x32;
-		plockdowninfo[3] = 0x01;
-		plockdowninfo[4] = 0x4a;
-		plockdowninfo[5] = 0x14;
-		plockdowninfo[6] = 0x31;
-		plockdowninfo[7] = 0x00;
-	} else {
-		NVT_LOG("%s: lockdown panel is huaxing\n", __func__);
-		plockdowninfo[0] = 0x53;
-		plockdowninfo[1] = 0x42;
-		plockdowninfo[2] = 0x32;
-		plockdowninfo[3] = 0x01;
-		plockdowninfo[4] = 0x4a;
-		plockdowninfo[5] = 0x14;
-		plockdowninfo[6] = 0x32;
-		plockdowninfo[7] = 0x00;
-	}
-	return 1;
 }
 
 static int nvt_get_panel_type(struct nvt_ts_data *ts_data)
@@ -1315,10 +1295,8 @@ bool nvt_get_dbgfw_status(void)
 }
 
 #if NVT_TOUCH_ESD_PROTECT
-module_param_named(esd_check_force, esd_check_force, int, 0664);
 void nvt_esd_check_enable(uint8_t enable)
 {
-	enable = esd_check_force;
 	/* update interrupt timer */
 	irq_timer = jiffies;
 	/* clear esd_retry counter, if protect function is enabled */
@@ -1343,18 +1321,11 @@ static uint8_t nvt_fw_recovery(uint8_t *point_data)
 	return detected;
 }
 
-module_param_named(esd_check_scale, esd_check_scale, int, 0664);
 static void nvt_esd_check_func(struct work_struct *work)
 {
 	unsigned int timer = jiffies_to_msecs(jiffies - irq_timer);
 
-	if (esd_check_scale > 24)
-		esd_check_scale = 24;
-	if (esd_check_scale < 4)
-		esd_check_scale = 4;
-
-	if ((timer > esd_check_scale * NVT_TOUCH_ESD_CHECK_PERIOD + 50)
-		&& (timer < 2 * esd_check_scale * NVT_TOUCH_ESD_CHECK_PERIOD - 50) && esd_check) {
+	if ((timer > NVT_TOUCH_ESD_CHECK_PERIOD) && esd_check) {
 		mutex_lock(&ts->lock);
 		NVT_LOG("do ESD recovery, timer = %d, retry = %d\n", timer, esd_retry);
 		/* do esd recovery, reload fw */
@@ -2179,10 +2150,26 @@ static int32_t nvt_ts_probe(struct platform_device *pdev)
 	}
 #endif
 
+#if NVT_TOUCH_MP
+	ret = nvt_mp_proc_init();
+	if (ret != 0) {
+		NVT_ERR("nvt mp proc init failed. ret=%d\n", ret);
+		goto err_mp_proc_init_failed;
+	}
+
+#ifndef NVT_SAVE_TESTDATA_IN_FILE
+	ret = nvt_test_data_proc_init(ts->client);
+	if (ret < 0) {
+		NVT_ERR("nvt test data interface init failed. ret=%d\n", ret);
+		goto err_mp_proc_init_failed;
+	}
+#endif
+
+#endif
 	attrs_p = (struct attribute_group *)devm_kzalloc(&pdev->dev, sizeof(*attrs_p), GFP_KERNEL);
 	if (!attrs_p) {
 		NVT_ERR("no mem to alloc");
-		goto err_alloc_failed;
+		goto err_mp_proc_init_failed;
 	}
 	ts->attrs = attrs_p;
 	attrs_p->name = "panel_info";
@@ -2194,13 +2181,13 @@ static int32_t nvt_ts_probe(struct platform_device *pdev)
 	if (!ts->event_wq) {
 		NVT_ERR("Can not create work thread for suspend/resume!!");
 		ret = -ENOMEM;
-		goto err_alloc_failed;
+		goto err_alloc_work_thread_failed;
 	}
 	INIT_WORK(&ts->resume_work, nvt_resume_work);
 	/*INIT_WORK(&ts->suspend_work, nvt_suspend_work);*/
 
 	ts->drm_notif.notifier_call = nvt_drm_notifier_callback;
-	ret = mi_drm_register_client(&ts->drm_notif);
+	ret = drm_register_client(&ts->drm_notif);
 	if(ret) {
 		NVT_ERR("register drm_notifier failed. ret=%d\n", ret);
 		goto err_register_drm_notif_failed;
@@ -2213,7 +2200,7 @@ static int32_t nvt_ts_probe(struct platform_device *pdev)
 		debugfs_create_file("touch_boost", 0660, ts->debugfs, ts, &nvt_touch_test_fops);
 	}
 #endif
-	nvt_cmds_panel_info();
+
 	bTouchIsAwake = 1;
 	NVT_LOG("end\n");
 
@@ -2221,11 +2208,15 @@ static int32_t nvt_ts_probe(struct platform_device *pdev)
 
 	return 0;
 
-	if (mi_drm_unregister_client(&ts->drm_notif))
+	if (drm_unregister_client(&ts->drm_notif))
 		NVT_ERR("Error occurred while unregistering drm_notifier.\n");
 err_register_drm_notif_failed:
 	destroy_workqueue(ts->event_wq);
-err_alloc_failed:
+err_alloc_work_thread_failed:
+#if NVT_TOUCH_MP
+nvt_mp_proc_deinit();
+err_mp_proc_init_failed:
+#endif
 #if NVT_TOUCH_EXT_PROC
 nvt_extra_proc_deinit();
 err_extra_proc_init_failed:
@@ -2302,8 +2293,14 @@ static int32_t nvt_ts_remove(struct platform_device *pdev)
 {
 	NVT_LOG("Removing driver...\n");
 
-	if (mi_drm_unregister_client(&ts->drm_notif))
+	if (drm_unregister_client(&ts->drm_notif))
 		NVT_ERR("Error occurred while unregistering drm_notifier.\n");
+#ifndef NVT_SAVE_TESTDATA_IN_FILE
+	nvt_test_data_proc_deinit();
+#endif
+#if NVT_TOUCH_MP
+	nvt_mp_proc_deinit();
+#endif
 #if NVT_TOUCH_EXT_PROC
 	nvt_extra_proc_deinit();
 #endif
@@ -2362,8 +2359,11 @@ static void nvt_ts_shutdown(struct platform_device *pdev)
 
 	nvt_irq_enable(false);
 
-	if (mi_drm_unregister_client(&ts->drm_notif))
+	if (drm_unregister_client(&ts->drm_notif))
 		NVT_ERR("Error occurred while unregistering drm_notifier.\n");
+#if NVT_TOUCH_MP
+	nvt_mp_proc_deinit();
+#endif
 #if NVT_TOUCH_EXT_PROC
 	nvt_extra_proc_deinit();
 #endif
@@ -2567,28 +2567,27 @@ Exit:
 
 static int nvt_drm_notifier_callback(struct notifier_block *self, unsigned long event, void *data)
 {
-	struct mi_drm_notifier *evdata = data;
+	struct drm_notify_data *evdata = data;
 	int *blank;
 	struct nvt_ts_data *ts_data=
 		container_of(self, struct nvt_ts_data, drm_notif);
 
-	if (!evdata || (evdata->id != 0))
+	if (!evdata || !evdata->data || !ts)
 		return 0;
 
-	if (evdata->data && ts_data) {
-		blank = evdata->data;
-		if (event == MI_DRM_EARLY_EVENT_BLANK) {
-			if (*blank == MI_DRM_BLANK_POWERDOWN) {
-				NVT_LOG("event=%lu, *blank=%d\n", event, *blank);
-				flush_workqueue(ts_data->event_wq);
-				nvt_ts_suspend(&ts_data->client->dev);
-			}
-		} else if (event == MI_DRM_EVENT_BLANK) {
-			if (*blank == MI_DRM_BLANK_UNBLANK) {
-				NVT_LOG("event=%lu, *blank=%d\n", event, *blank);
-				flush_workqueue(ts_data->event_wq);
-				queue_work(ts_data->event_wq, &ts_data->resume_work);
-			}
+	blank = evdata->data;
+
+	if (event == DRM_EARLY_EVENT_BLANK) {
+		if (*blank == DRM_BLANK_POWERDOWN) {
+			NVT_LOG("event=%lu, *blank=%d\n", event, *blank);
+			flush_workqueue(ts_data->event_wq);
+			nvt_ts_suspend(&ts_data->client->dev);
+		}
+	} else if (event == DRM_EVENT_BLANK) {
+		if (*blank == DRM_BLANK_UNBLANK) {
+			NVT_LOG("event=%lu, *blank=%d\n", event, *blank);
+			flush_workqueue(ts_data->event_wq);
+			queue_work(ts_data->event_wq, &ts_data->resume_work);
 		}
 	}
 	return 0;
@@ -2712,6 +2711,5 @@ static void __exit nvt_driver_exit(void)
 }
 late_initcall(nvt_driver_init);
 
-module_param_named(touch_fw_override, touch_fw_override, int, 0664);
 MODULE_DESCRIPTION("Novatek Touchscreen Driver");
 MODULE_LICENSE("GPL");
