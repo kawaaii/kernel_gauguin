@@ -296,7 +296,7 @@ static void fuse_dentry_canonical_path(const struct path *path,
 	char *path_name;
 	int err;
 
-	path_name = (char *)get_zeroed_page(GFP_KERNEL);
+	path_name = (char *)__get_free_page(GFP_KERNEL);
 	if (!path_name)
 		goto default_path;
 
@@ -329,7 +329,6 @@ const struct dentry_operations fuse_dentry_operations = {
 const struct dentry_operations fuse_root_dentry_operations = {
 	.d_init		= fuse_dentry_init,
 	.d_release	= fuse_dentry_release,
-	.d_canonical_path = fuse_dentry_canonical_path,
 };
 
 int fuse_valid_type(int m)
@@ -1363,16 +1362,8 @@ retry:
 			dput(dentry);
 			dentry = alias;
 		}
-		if (IS_ERR(dentry)) {
-			if (!IS_ERR(inode)) {
-				struct fuse_inode *fi = get_fuse_inode(inode);
-
-				spin_lock(&fc->lock);
-				fi->nlookup--;
-				spin_unlock(&fc->lock);
-			}
+		if (IS_ERR(dentry))
 			return PTR_ERR(dentry);
-		}
 	}
 	if (fc->readdirplus_auto)
 		set_bit(FUSE_I_INIT_RDPLUS, &get_fuse_inode(inode)->state);

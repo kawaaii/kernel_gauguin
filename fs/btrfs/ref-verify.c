@@ -891,10 +891,8 @@ int btrfs_ref_tree_mod(struct btrfs_root *root, u64 bytenr, u64 num_bytes,
 out_unlock:
 	spin_unlock(&root->fs_info->ref_verify_lock);
 out:
-	if (ret) {
-		btrfs_free_ref_cache(fs_info);
+	if (ret)
 		btrfs_clear_opt(fs_info->mount_opt, REF_VERIFY);
-	}
 	return ret;
 }
 
@@ -1023,8 +1021,8 @@ int btrfs_build_ref_tree(struct btrfs_fs_info *fs_info)
 		}
 	}
 	if (ret) {
-		btrfs_free_ref_cache(fs_info);
 		btrfs_clear_opt(fs_info->mount_opt, REF_VERIFY);
+		btrfs_free_ref_cache(fs_info);
 	}
 	btrfs_free_path(path);
 	return ret;
