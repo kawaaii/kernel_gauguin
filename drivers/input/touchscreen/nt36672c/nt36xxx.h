@@ -27,6 +27,8 @@
 #include <linux/sysfs.h>
 #include <linux/workqueue.h>
 
+#include <drm/drm_panel.h>
+
 #include "nt36xxx_mem_map.h"
 
 #define FW_HISTORY_SIZE	128
