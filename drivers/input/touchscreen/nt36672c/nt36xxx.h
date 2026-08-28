@@ -108,6 +108,8 @@ enum nvt_ic_state {
 	NVT_IC_INIT,
 };
 
+#define NVT_TRANSFER_LEN	(63*1024)
+
 struct nvt_ts_data {
 	struct spi_device *client;
 	struct input_dev *input_dev;
@@ -135,7 +137,7 @@ struct nvt_ts_data {
 	uint8_t hw_crc;
 	uint16_t nvt_pid;
 	uint8_t rbuf[1025];
-	uint8_t *xbuf;
+	uint8_t xbuf[NVT_TRANSFER_LEN + 1];
 	struct mutex xbuf_lock;
 	bool irq_enabled;
 	struct pinctrl *ts_pinctrl;
@@ -190,7 +192,6 @@ typedef enum {
 #define SPI_READ_MASK(a)	(a & 0x7F)
 
 #define DUMMY_BYTES (1)
-#define NVT_TRANSFER_LEN	(63*1024)
 
 typedef enum {
 	NVTWRITE = 0,

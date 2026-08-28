@@ -1733,18 +1733,9 @@ static int32_t nvt_ts_probe(struct spi_device *client)
 		return ret;
 	}
 
-	ts = kzalloc(sizeof(struct nvt_ts_data), GFP_KERNEL);
+	ts = devm_kzalloc(&client->dev, sizeof(struct nvt_ts_data), GFP_KERNEL);
 	if (ts == NULL) {
 		NVT_ERR("failed to allocated memory for nvt ts data\n");
-		return -ENOMEM;
-	}
-	ts->xbuf = (uint8_t *)kzalloc((NVT_TRANSFER_LEN+1), GFP_KERNEL);
-	if(ts->xbuf == NULL) {
-		NVT_ERR("kzalloc for xbuf failed!\n");
-		if (ts) {
-			kfree(ts);
-			ts = NULL;
-		}
 		return -ENOMEM;
 	}
 
@@ -2042,14 +2033,6 @@ err_gpio_config_failed:
 err_spi_setup:
 err_ckeck_full_duplex:
 	spi_set_drvdata(client, NULL);
-	if (ts->xbuf) {
-		kfree(ts->xbuf);
-		ts->xbuf = NULL;
-	}
-	if (ts) {
-		kfree(ts);
-		ts = NULL;
-	}
 	return ret;
 }
 
@@ -2108,11 +2091,6 @@ static int32_t nvt_ts_remove(struct spi_device *client)
 	}
 
 	spi_set_drvdata(client, NULL);
-
-	if (ts) {
-		kfree(ts);
-		ts = NULL;
-	}
 
 	return 0;
 }
