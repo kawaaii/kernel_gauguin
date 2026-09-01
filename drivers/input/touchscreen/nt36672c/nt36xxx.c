@@ -30,7 +30,7 @@
 #include <linux/of_irq.h>
 #include <linux/init.h>
 
-#include <linux/msm_drm_notify.h>
+#include <drm/drm_panel.h>
 
 #include "nt36xxx.h"
 #if NVT_TOUCH_ESD_PROTECT
@@ -57,6 +57,8 @@ extern void nvt_extra_proc_deinit(void);
 #endif
 
 struct nvt_ts_data *ts;
+
+static struct drm_panel *active_panel;
 
 #if BOOT_UPDATE_FIRMWARE
 static struct workqueue_struct *nvt_fwu_wq;
@@ -1686,6 +1688,32 @@ static void get_lockdown_info(struct work_struct *work)
 	}
 }
 
+static int nvt_ts_check_dt(struct device_node *np)
+{
+	int i;
+	int count;
+	struct device_node *node;
+	struct drm_panel *panel;
+
+	count = of_count_phandle_with_args(np, "panel", NULL);
+	if (count <= 0)
+		return 0;
+
+	for (i = 0; i < count; i++) {
+		node = of_parse_phandle(np, "panel", i);
+		panel = of_drm_find_panel(node);
+		of_node_put(node);
+		if (!IS_ERR(panel)) {
+			active_panel = panel;
+			NVT_LOG(" %s:find\n", __func__);
+			return 0;
+		}
+	}
+
+	NVT_ERR(" %s: not find\n", __func__);
+	return -ENODEV;
+}
+
 /*******************************************************
 Description:
 	Novatek touchscreen driver probe function.
@@ -1699,6 +1727,11 @@ static int32_t nvt_ts_probe(struct spi_device *client)
 	int32_t retry = 0;
 
 	NVT_LOG("start\n");
+
+	if (nvt_ts_check_dt(client->dev.of_node)) {
+		ret = -EPROBE_DEFER;
+		return ret;
+	}
 
 	ts = kzalloc(sizeof(struct nvt_ts_data), GFP_KERNEL);
 	if (ts == NULL) {
@@ -1936,9 +1969,10 @@ static int32_t nvt_ts_probe(struct spi_device *client)
 	INIT_WORK(&ts->resume_work, nvt_resume_work);
 
 	ts->drm_notif.notifier_call = nvt_drm_notifier_callback;
-	ret = msm_drm_register_client(&ts->drm_notif);
-	if(ret) {
-		NVT_ERR("register drm_notifier failed. ret=%d\n", ret);
+	if (active_panel &&
+		drm_panel_notifier_register(active_panel,
+			&ts->drm_notif) < 0) {
+		NVT_ERR("register notifier failed!\n");
 		goto err_register_drm_notif_failed;
 	}
 
@@ -1951,8 +1985,8 @@ static int32_t nvt_ts_probe(struct spi_device *client)
 
 	return 0;
 
-	if (msm_drm_unregister_client(&ts->drm_notif))
-		NVT_ERR("Error occurred while unregistering drm_notifier.\n");
+	if (active_panel)
+		drm_panel_notifier_unregister(active_panel, &ts->drm_notif);
 err_register_drm_notif_failed:
 	destroy_workqueue(ts->event_wq);
 err_alloc_failed:
@@ -2030,8 +2064,8 @@ static int32_t nvt_ts_remove(struct spi_device *client)
 {
 	NVT_LOG("Removing driver...\n");
 
-	if (msm_drm_unregister_client(&ts->drm_notif))
-		NVT_ERR("Error occurred while unregistering drm_notifier.\n");
+	if (active_panel)
+		drm_panel_notifier_unregister(active_panel, &ts->drm_notif);
 #if NVT_TOUCH_EXT_PROC
 	nvt_extra_proc_deinit();
 #endif
@@ -2089,8 +2123,8 @@ static void nvt_ts_shutdown(struct spi_device *client)
 
 	nvt_irq_enable(false);
 
-	if (msm_drm_unregister_client(&ts->drm_notif))
-		NVT_ERR("Error occurred while unregistering drm_notifier.\n");
+	if (active_panel)
+		drm_panel_notifier_unregister(active_panel, &ts->drm_notif);
 #if NVT_TOUCH_EXT_PROC
 	nvt_extra_proc_deinit();
 #endif
@@ -2297,28 +2331,27 @@ Exit:
 
 static int nvt_drm_notifier_callback(struct notifier_block *self, unsigned long event, void *data)
 {
-	struct msm_drm_notifier *evdata = data;
+	struct drm_panel_notifier *evdata = data;
 	int *blank;
-	struct nvt_ts_data *ts_data=
+	struct nvt_ts_data *ts_data =
 		container_of(self, struct nvt_ts_data, drm_notif);
 
-	if (!evdata || (evdata->id != 0))
+	if (!evdata || !evdata->data || !ts_data)
 		return 0;
 
-	if (evdata->data && ts_data) {
-		blank = evdata->data;
-		if (event == MSM_DRM_EARLY_EVENT_BLANK) {
-			if (*blank == MSM_DRM_BLANK_POWERDOWN) {
-				NVT_LOG("event=%lu, *blank=%d\n", event, *blank);
-				flush_workqueue(ts_data->event_wq);
-				nvt_ts_suspend(&ts_data->client->dev);
-			}
-		} else if (event == MSM_DRM_EVENT_BLANK) {
-			if (*blank == MSM_DRM_BLANK_UNBLANK) {
-				NVT_LOG("event=%lu, *blank=%d\n", event, *blank);
-				flush_workqueue(ts_data->event_wq);
-				queue_work(ts_data->event_wq, &ts_data->resume_work);
-			}
+	blank = evdata->data;
+
+	if (event == DRM_PANEL_EARLY_EVENT_BLANK) {
+		if (*blank == DRM_PANEL_BLANK_POWERDOWN) {
+			NVT_LOG("event=%lu, *blank=%d\n", event, *blank);
+			flush_workqueue(ts_data->event_wq);
+			nvt_ts_suspend(&ts_data->client->dev);
+		}
+	} else if (event == DRM_PANEL_EVENT_BLANK) {
+		if (*blank == DRM_PANEL_BLANK_UNBLANK) {
+			NVT_LOG("event=%lu, *blank=%d\n", event, *blank);
+			flush_workqueue(ts_data->event_wq);
+			queue_work(ts_data->event_wq, &ts_data->resume_work);
 		}
 	}
 	return 0;
