@@ -118,6 +118,7 @@ struct nvt_ts_data {
 	struct work_struct switch_mode_work;
 	uint16_t addr;
 	int8_t phys[32];
+	const struct spi_device_id *id;
 	struct notifier_block drm_notif;
 	uint8_t fw_ver;
 	uint8_t x_num;

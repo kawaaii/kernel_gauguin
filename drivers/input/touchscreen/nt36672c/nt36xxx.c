@@ -69,6 +69,7 @@ extern void Boot_Update_Firmware(struct work_struct *work);
 static int nvt_drm_notifier_callback(struct notifier_block *self, unsigned long event, void *data);
 static int32_t nvt_ts_suspend(struct device *dev);
 static int32_t nvt_ts_resume(struct device *dev);
+static int32_t nvt_ts_late_probe(struct spi_device *client, const struct spi_device_id *id);
 extern void dsi_panel_doubleclick_enable(bool on);
 uint32_t ENG_RST_ADDR  = 0x7FFF80;
 uint32_t SWRST_N8_ADDR = 0; /* read from dtsi */
@@ -1721,62 +1722,17 @@ Description:
 return:
 	Executive outcomes. 0---succeed. negative---failed
 *******************************************************/
-static int32_t nvt_ts_probe(struct spi_device *client)
+static int32_t nvt_ts_late_probe(struct spi_device *client,
+	const struct spi_device_id *id)
 {
 	int32_t ret = 0;
+#if ((TOUCH_KEY_NUM > 0) || WAKEUP_GESTURE)
 	int32_t retry = 0;
+#endif
 
-	NVT_LOG("start\n");
-
-	if (nvt_ts_check_dt(client->dev.of_node)) {
-		ret = -EPROBE_DEFER;
-		return ret;
-	}
-
-	ts = devm_kzalloc(&client->dev, sizeof(struct nvt_ts_data), GFP_KERNEL);
-	if (ts == NULL) {
-		NVT_ERR("failed to allocated memory for nvt ts data\n");
-		return -ENOMEM;
-	}
-
-	/* ---parse dts--- */
-	ret = nvt_parse_dt(&client->dev);
-	if (ret) {
-		NVT_ERR("parse dt error\n");
-		goto err_spi_setup;
-	}
-
-	ts->client = client;
-	spi_set_drvdata(client, ts);
-
-	/* ---prepare for spi parameter--- */
-	if (ts->client->master->flags & SPI_MASTER_HALF_DUPLEX) {
-		NVT_ERR("Full duplex not supported by master\n");
-		ret = -EIO;
-		goto err_ckeck_full_duplex;
-	}
-	ts->client->bits_per_word = 8;
-	ts->client->mode = SPI_MODE_0;
-	ts->client->max_speed_hz = ts->spi_max_freq;
-
-	ret = spi_setup(ts->client);
-	if (ret < 0) {
-		NVT_ERR("Failed to perform SPI setup\n");
-		goto err_spi_setup;
-	}
-
-	NVT_LOG("mode=%d, max_speed_hz=%d\n", ts->client->mode, ts->client->max_speed_hz);
-
-	ret = nvt_pinctrl_init(ts);
-	if (!ret && ts->ts_pinctrl) {
-		ret = pinctrl_select_state(ts->ts_pinctrl, ts->pinctrl_state_active);
-
-		if (ret < 0) {
-			NVT_ERR("Failed to select %s pinstate %d\n",
-				PINCTRL_STATE_ACTIVE, ret);
-		}
-	} else {
-		NVT_ERR("Failed to init pinctrl\n");
+	if (ts->input_dev) {
+		NVT_LOG("already late probed\n");
+		return 0;
 	}
 
 	NVT_LOG("Request GPIO\n");
@@ -1786,9 +1742,6 @@ static int32_t nvt_ts_probe(struct spi_device *client)
 		NVT_ERR("gpio config error!\n");
 		goto err_gpio_config_failed;
 	}
-
-	mutex_init(&ts->lock);
-	mutex_init(&ts->xbuf_lock);
 
 	/* ---eng reset before TP_RESX high */
 
@@ -1809,6 +1762,10 @@ static int32_t nvt_ts_probe(struct spi_device *client)
 		goto err_chipvertrim_failed;
 	}
 	NVT_LOG("finish check chip\n");
+
+	nvt_bootloader_reset();
+	nvt_check_fw_reset_state(RESET_STATE_INIT);
+	nvt_get_fw_info();
 
 	ts->abs_x_max = TOUCH_DEFAULT_MAX_WIDTH;
 	ts->abs_y_max = TOUCH_DEFAULT_MAX_HEIGHT;
@@ -1950,23 +1907,6 @@ static int32_t nvt_ts_probe(struct spi_device *client)
 	}
 #endif
 
-	ts->event_wq = alloc_workqueue("nvt-event-queue",
-		WQ_UNBOUND | WQ_HIGHPRI | WQ_CPU_INTENSIVE, 1);
-	if (!ts->event_wq) {
-		NVT_ERR("Can not create work thread for suspend/resume!!");
-		ret = -ENOMEM;
-		goto err_alloc_failed;
-	}
-	INIT_WORK(&ts->resume_work, nvt_resume_work);
-
-	ts->drm_notif.notifier_call = nvt_drm_notifier_callback;
-	if (active_panel &&
-		drm_panel_notifier_register(active_panel,
-			&ts->drm_notif) < 0) {
-		NVT_ERR("register notifier failed!\n");
-		goto err_register_drm_notif_failed;
-	}
-
 	nvt_cmds_panel_info();
 
 	bTouchIsAwake = 1;
@@ -1976,11 +1916,6 @@ static int32_t nvt_ts_probe(struct spi_device *client)
 
 	return 0;
 
-	if (active_panel)
-		drm_panel_notifier_unregister(active_panel, &ts->drm_notif);
-err_register_drm_notif_failed:
-	destroy_workqueue(ts->event_wq);
-err_alloc_failed:
 #if NVT_TOUCH_EXT_PROC
 nvt_extra_proc_deinit();
 err_extra_proc_init_failed:
@@ -2013,7 +1948,8 @@ err_create_nvt_fwu_wq_failed:
 err_create_nvt_lockdown_wq_failed:
 	pm_relax(&client->dev);
 #if WAKEUP_GESTURE
-	device_init_wakeup(&ts->input_dev->dev, 0);
+	if (ts->input_dev)
+		device_init_wakeup(&ts->input_dev->dev, 0);
 #endif
 	free_irq(client->irq, ts);
 err_int_request_failed:
@@ -2026,10 +1962,111 @@ err_input_register_device_failed:
 	}
 err_input_dev_alloc_failed:
 err_chipvertrim_failed:
-	mutex_destroy(&ts->xbuf_lock);
-	mutex_destroy(&ts->lock);
 	nvt_gpio_deconfig(ts);
 err_gpio_config_failed:
+	NVT_ERR("ret = %d\n", ret);
+	return ret;
+}
+
+/*******************************************************
+Description:
+	Novatek touchscreen driver probe function.
+
+return:
+	Executive outcomes. 0---succeed. negative---failed
+*******************************************************/
+static int32_t nvt_ts_probe(struct spi_device *client)
+{
+	int32_t ret = 0;
+
+	NVT_LOG("start\n");
+
+	if (nvt_ts_check_dt(client->dev.of_node)) {
+		ret = -EPROBE_DEFER;
+		return ret;
+	}
+
+	ts = devm_kzalloc(&client->dev, sizeof(struct nvt_ts_data), GFP_KERNEL);
+	if (ts == NULL) {
+		NVT_ERR("failed to allocated memory for nvt ts data\n");
+		return -ENOMEM;
+	}
+
+	/* ---parse dts--- */
+	ret = nvt_parse_dt(&client->dev);
+	if (ret) {
+		NVT_ERR("parse dt error\n");
+		goto err_spi_setup;
+	}
+
+	ts->client = client;
+	spi_set_drvdata(client, ts);
+
+	/* ---prepare for spi parameter--- */
+	if (ts->client->master->flags & SPI_MASTER_HALF_DUPLEX) {
+		NVT_ERR("Full duplex not supported by master\n");
+		ret = -EIO;
+		goto err_ckeck_full_duplex;
+	}
+	ts->client->bits_per_word = 8;
+	ts->client->mode = SPI_MODE_0;
+	ts->client->max_speed_hz = ts->spi_max_freq;
+
+	ret = spi_setup(ts->client);
+	if (ret < 0) {
+		NVT_ERR("Failed to perform SPI setup\n");
+		goto err_spi_setup;
+	}
+
+	NVT_LOG("mode=%d, max_speed_hz=%d\n", ts->client->mode, ts->client->max_speed_hz);
+
+	ret = nvt_pinctrl_init(ts);
+	if (!ret && ts->ts_pinctrl) {
+		ret = pinctrl_select_state(ts->ts_pinctrl, ts->pinctrl_state_active);
+
+		if (ret < 0) {
+			NVT_ERR("Failed to select %s pinstate %d\n",
+				PINCTRL_STATE_ACTIVE, ret);
+		}
+	} else {
+		NVT_ERR("Failed to init pinctrl\n");
+	}
+
+	mutex_init(&ts->lock);
+	mutex_init(&ts->xbuf_lock);
+
+	ts->id = spi_get_device_id(client);
+
+	ts->event_wq = alloc_workqueue("nvt-event-queue",
+		WQ_UNBOUND | WQ_HIGHPRI | WQ_CPU_INTENSIVE, 1);
+	if (!ts->event_wq) {
+		NVT_ERR("Can not create work thread for suspend/resume!!");
+		ret = -ENOMEM;
+		goto err_alloc_failed;
+	}
+	INIT_WORK(&ts->resume_work, nvt_resume_work);
+
+	ts->drm_notif.notifier_call = nvt_drm_notifier_callback;
+	if (active_panel &&
+		drm_panel_notifier_register(active_panel,
+			&ts->drm_notif) < 0) {
+		NVT_ERR("register notifier failed!\n");
+		goto err_register_drm_notif_failed;
+	}
+
+	NVT_LOG("end\n");
+	return 0;
+
+	if (active_panel)
+		drm_panel_notifier_unregister(active_panel, &ts->drm_notif);
+err_register_drm_notif_failed:
+	if (ts->event_wq) {
+		destroy_workqueue(ts->event_wq);
+		ts->event_wq = NULL;
+	}
+err_alloc_failed:
+	mutex_destroy(&ts->xbuf_lock);
+	mutex_destroy(&ts->lock);
 err_spi_setup:
 err_ckeck_full_duplex:
 	spi_set_drvdata(client, NULL);
@@ -2071,14 +2108,22 @@ static int32_t nvt_ts_remove(struct spi_device *client)
 		destroy_workqueue(nvt_fwu_wq);
 		nvt_fwu_wq = NULL;
 	}
+	if (nvt_lockdown_wq) {
+		cancel_delayed_work_sync(&ts->nvt_lockdown_work);
+		destroy_workqueue(nvt_lockdown_wq);
+		nvt_lockdown_wq = NULL;
+	}
 #endif
 
 #if WAKEUP_GESTURE
-	device_init_wakeup(&ts->input_dev->dev, 0);
+	if (ts->input_dev)
+		device_init_wakeup(&ts->input_dev->dev, 0);
 #endif
 
-	nvt_irq_enable(false);
-	free_irq(client->irq, ts);
+	if (client->irq) {
+		nvt_irq_enable(false);
+		free_irq(client->irq, ts);
+	}
 
 	mutex_destroy(&ts->xbuf_lock);
 	mutex_destroy(&ts->lock);
@@ -2088,6 +2133,11 @@ static int32_t nvt_ts_remove(struct spi_device *client)
 	if (ts->input_dev) {
 		input_unregister_device(ts->input_dev);
 		ts->input_dev = NULL;
+	}
+
+	if (ts->event_wq) {
+		destroy_workqueue(ts->event_wq);
+		ts->event_wq = NULL;
 	}
 
 	spi_set_drvdata(client, NULL);
@@ -2119,8 +2169,22 @@ static void nvt_ts_shutdown(struct spi_device *client)
 	}
 #endif /* #if NVT_TOUCH_ESD_PROTECT */
 
+#if BOOT_UPDATE_FIRMWARE
+	if (nvt_fwu_wq) {
+		cancel_delayed_work_sync(&ts->nvt_fwu_work);
+		destroy_workqueue(nvt_fwu_wq);
+		nvt_fwu_wq = NULL;
+	}
+	if (nvt_lockdown_wq) {
+		cancel_delayed_work_sync(&ts->nvt_lockdown_work);
+		destroy_workqueue(nvt_lockdown_wq);
+		nvt_lockdown_wq = NULL;
+	}
+#endif
+
 #if WAKEUP_GESTURE
-	device_init_wakeup(&ts->input_dev->dev, 0);
+	if (ts->input_dev)
+		device_init_wakeup(&ts->input_dev->dev, 0);
 #endif
 }
 
@@ -2224,6 +2288,15 @@ return:
 static int32_t nvt_ts_resume(struct device *dev)
 {
 	int ret;
+
+	NVT_LOG("start\n");
+
+	if (bTouchIsAwake || ts->fw_ver == 0) {
+		nvt_ts_late_probe(ts->client, ts->id);
+		NVT_LOG("nvt_ts_late_probe\n");
+		return 0;
+	}
+
 	if (ts->dev_pm_suspend)
 		pm_stay_awake(dev);
 	if (!ts->db_wakeup) {
@@ -2238,24 +2311,10 @@ static int32_t nvt_ts_resume(struct device *dev)
 			NVT_ERR("Failed to init pinctrl\n");
 		}
 	}
-	if (bTouchIsAwake) {
-		NVT_LOG("Touch is already resume\n");
-#if NVT_TOUCH_WDT_RECOVERY
-		mutex_lock(&ts->lock);
-		if (nvt_get_dbgfw_status()) {
-			ret = nvt_update_firmware(DEFAULT_DEBUG_FW_NAME);
-		} else {
-			ret = nvt_update_firmware(ts->fw_name);
-		}
-		mutex_unlock(&ts->lock);
-#endif /* #if NVT_TOUCH_WDT_RECOVERY */
-		goto Exit;
-	}
 
 	ts->ic_state = NVT_IC_RESUME_IN;
 
 	mutex_lock(&ts->lock);
-	NVT_LOG("start\n");
 
 	/* please make sure display reset(RESX) sequence and mipi dsi cmds sent before this */
 #if NVT_TOUCH_SUPPORT_HW_RST
@@ -2298,7 +2357,6 @@ static int32_t nvt_ts_resume(struct device *dev)
 		NVT_LOG("execute delayed command, set double click wakeup %d\n", ts->db_wakeup);
 		dsi_panel_doubleclick_enable(!!ts->db_wakeup);
 	}
-Exit:
 	if (ts->dev_pm_suspend)
 		pm_relax(dev);
 	NVT_LOG("end\n");
