@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-2.0-only
 menuconfig PM_DEVFREQ
 	bool "Generic Dynamic Voltage and Frequency Scaling (DVFS) support"
 	select SRCU
@@ -73,6 +74,14 @@ config DEVFREQ_GOV_PASSIVE
 	  through sysfs entries. The passive governor recommends that
 	  devfreq device uses the OPP table to get the frequency/voltage.
 
+config DEVFREQ_GOV_CPUFREQ
+	tristate "CPUfreq"
+	depends on CPU_FREQ
+	help
+	  Chooses frequency based on the online CPUs' current frequency and a
+	  CPU frequency to device frequency mapping table(s). This governor
+	  can be useful for controlling devices such as DDR, cache, CCI, etc.
+
 config QCOM_BIMC_BWMON
 	tristate "QCOM BIMC Bandwidth monitor hardware"
 	depends on ARCH_QCOM
@@ -120,34 +129,7 @@ config DEVFREQ_GOV_MEMLAT
 	  this uses target specific counters it can conflict with existing profiling
 	  tools.
 
-config DEVFREQ_GOV_CDSPL3
-	tristate "QTI DEVFREQ governor for CDSP L3 requests"
-	depends on QCOM_CDSP_RM
-	help
-	  CDSP resource manager will use this governor to vote for L3 clock
-	  for IO-coherent traffic generated from CDSP. The driver implements
-	  a callback routine for CDSP resource manager to register a CPU L3
-	  clock frequency level.
-
 comment "DEVFREQ Drivers"
-
-config DEVFREQ_GOV_QCOM_ADRENO_TZ
-	tristate "Qualcomm Technologies Inc Adreno Trustzone"
-	depends on QCOM_KGSL
-	help
-	   Trustzone based governor for the Adreno GPU. Sets
-	   the frequency using a "on-demand" algorithm. This
-	   governor is unlikely to be useful for other
-	   devices.
-
-config DEVFREQ_GOV_QCOM_GPUBW_MON
-	tristate "GPU BW voting governor"
-	depends on DEVFREQ_GOV_QCOM_ADRENO_TZ
-	help
-	  This governor works together with Adreno Trustzone governor,
-	  and select bus frequency votes using an "on-demand" alorithm.
-	  This governor is unlikely to be useful for non-Adreno
-	  devices.
 
 config ARM_EXYNOS_BUS_DEVFREQ
 	tristate "ARM EXYNOS Generic Memory Bus DEVFREQ Driver"
@@ -166,14 +148,28 @@ config ARM_EXYNOS_BUS_DEVFREQ
 	  This does not yet operate with optimal voltages.
 
 config ARM_TEGRA_DEVFREQ
-	tristate "Tegra DEVFREQ Driver"
-	depends on ARCH_TEGRA_124_SOC
-	select DEVFREQ_GOV_SIMPLE_ONDEMAND
+	tristate "NVIDIA Tegra30/114/124/210 DEVFREQ Driver"
+	depends on ARCH_TEGRA_3x_SOC || ARCH_TEGRA_114_SOC || \
+		ARCH_TEGRA_132_SOC || ARCH_TEGRA_124_SOC || \
+		ARCH_TEGRA_210_SOC || \
+		COMPILE_TEST
 	select PM_OPP
+	depends on COMMON_CLK
 	help
 	  This adds the DEVFREQ driver for the Tegra family of SoCs.
 	  It reads ACTMON counters of memory controllers and adjusts the
 	  operating frequencies and voltages with OPP support.
+
+config ARM_TEGRA20_DEVFREQ
+	tristate "NVIDIA Tegra20 DEVFREQ Driver"
+	depends on (TEGRA_MC && TEGRA20_EMC) || COMPILE_TEST
+	depends on COMMON_CLK
+	select DEVFREQ_GOV_SIMPLE_ONDEMAND
+	select PM_OPP
+	help
+	  This adds the DEVFREQ driver for the Tegra20 family of SoCs.
+	  It reads Memory Controller counters and adjusts the operating
+	  frequencies and voltages with OPP support.
 
 config ARM_RK3399_DMC_DEVFREQ
 	tristate "ARM RK3399 DMC DEVFREQ Driver"
@@ -188,20 +184,6 @@ config ARM_RK3399_DMC_DEVFREQ
           It sets the frequency for the memory controller and reads the usage counts
           from hardware.
 
-config ARM_QCOM_DEVFREQ_FW
-	bool "Qualcomm Technologies Inc. DEVFREQ FW driver"
-	depends on ARCH_QCOM
-	select DEVFREQ_GOV_PERFORMANCE
-	select DEVFREQ_GOV_POWERSAVE
-	select DEVFREQ_GOV_USERSPACE
-	default n
-	help
-	  The firmware present in some QCOM chipsets offloads the steps
-	  necessary for changing the frequency of some devices (Eg: L3). This
-	  driver implements the devfreq interface for this firmware so that
-	  various governors could be used to scale the frequency of these
-	  devices.
-
 config DEVFREQ_SIMPLE_DEV
 	tristate "Device driver for simple clock device with no status info"
 	select DEVFREQ_GOV_PERFORMANCE
@@ -212,13 +194,14 @@ config DEVFREQ_SIMPLE_DEV
 	  Device driver for simple devices that control their frequency using
 	  clock APIs and don't have any form of status reporting.
 
-config QCOM_DEVFREQ_DEVBW
+config QCOM_DEVFREQ_ICC
 	bool "Qualcomm Technologies Inc. DEVFREQ device for device master <-> slave IB/AB BW voting"
 	depends on ARCH_QCOM
 	select DEVFREQ_GOV_PERFORMANCE
 	select DEVFREQ_GOV_POWERSAVE
 	select DEVFREQ_GOV_USERSPACE
 	select DEVFREQ_GOV_CPUFREQ
+	select INTERCONNECT
 	default n
 	help
 	  Different devfreq governors use this devfreq device to make CPU to
@@ -238,14 +221,6 @@ config ARM_QCOM_DEVFREQ_QOSLAT
 	  interface to vote for a memory latency QoS level. This
 	  driver votes on this interface to request a particular
 	  memory latency QoS level.
-
-config DEVFREQ_GOV_STATICMAP
-	tristate "Device driver for static voting of DDR freq based on a clock rate change"
-	depends on ARCH_QCOM
-	help
-	  Clock notifier based governor for device to DDR Bandwidth voting.
-	  This governor votes for the DDR BW based on the device's clock rate
-	  change.
 
 source "drivers/devfreq/event/Kconfig"
 

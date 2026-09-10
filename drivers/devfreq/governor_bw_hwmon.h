@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-only */
 /*
- * Copyright (c) 2014-2016, 2019, The Linux Foundation. All rights reserved.
+ * Copyright (c) 2014-2016, 2019-2020, The Linux Foundation. All rights reserved.
  */
 
 #ifndef _GOVERNOR_BW_HWMON_H
@@ -35,29 +35,29 @@
  *
  */
 struct bw_hwmon {
-	int (*start_hwmon)(struct bw_hwmon *hw, unsigned long mbps);
-	void (*stop_hwmon)(struct bw_hwmon *hw);
-	int (*suspend_hwmon)(struct bw_hwmon *hw);
-	int (*resume_hwmon)(struct bw_hwmon *hw);
-	unsigned long (*set_thres)(struct bw_hwmon *hw, unsigned long bytes);
-	unsigned long (*set_hw_events)(struct bw_hwmon *hw,
+	int			(*start_hwmon)(struct bw_hwmon *hw,
+					unsigned long mbps);
+	void			(*stop_hwmon)(struct bw_hwmon *hw);
+	int			(*suspend_hwmon)(struct bw_hwmon *hw);
+	int			(*resume_hwmon)(struct bw_hwmon *hw);
+	unsigned long		(*set_thres)(struct bw_hwmon *hw,
+					unsigned long bytes);
+	unsigned long		(*set_hw_events)(struct bw_hwmon *hw,
 					unsigned int sample_ms);
-	unsigned long (*get_bytes_and_clear)(struct bw_hwmon *hw);
-	int (*set_throttle_adj)(struct bw_hwmon *hw, uint adj);
-	u32 (*get_throttle_adj)(struct bw_hwmon *hw);
-	struct device *dev;
-	struct device_node *of_node;
-	struct devfreq_governor *gov;
-
-	unsigned long up_wake_mbps;
-	unsigned long undo_over_req_mbps;
-	unsigned long down_wake_mbps;
-	unsigned int down_cnt;
-
-	struct devfreq *df;
+	unsigned long		(*get_bytes_and_clear)(struct bw_hwmon *hw);
+	int			(*set_throttle_adj)(struct bw_hwmon *hw,
+					uint adj);
+	u32			(*get_throttle_adj)(struct bw_hwmon *hw);
+	struct device		*dev;
+	struct device_node	*of_node;
+	struct devfreq_governor	*gov;
+	unsigned long		up_wake_mbps;
+	unsigned long		down_wake_mbps;
+	unsigned int		down_cnt;
+	struct devfreq		*df;
 };
 
-#ifdef CONFIG_DEVFREQ_GOV_QCOM_BW_HWMON
+#if IS_ENABLED(CONFIG_DEVFREQ_GOV_QCOM_BW_HWMON)
 int register_bw_hwmon(struct device *dev, struct bw_hwmon *hwmon);
 int update_bw_hwmon(struct bw_hwmon *hwmon);
 int bw_hwmon_sample_end(struct bw_hwmon *hwmon);
