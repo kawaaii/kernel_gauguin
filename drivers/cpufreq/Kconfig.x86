@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: GPL-2.0-only
 #
 # x86 CPU Frequency scaling drivers
 #
@@ -72,7 +73,7 @@ config X86_SFI_CPUFREQ
 config ELAN_CPUFREQ
 	tristate "AMD Elan SC400 and SC410"
 	depends on MELAN
-	help
+	---help---
 	  This adds the CPUFreq driver for AMD Elan SC400 and SC410
 	  processors.
 
@@ -87,7 +88,7 @@ config ELAN_CPUFREQ
 config SC520_CPUFREQ
 	tristate "AMD Elan SC520"
 	depends on MELAN
-	help
+	---help---
 	  This adds the CPUFreq driver for AMD Elan SC520 processor.
 
 	  For details, take a look at <file:Documentation/cpu-freq/>.

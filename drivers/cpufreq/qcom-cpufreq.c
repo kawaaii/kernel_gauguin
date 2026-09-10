@@ -49,7 +49,6 @@ static int set_cpu_freq(struct cpufreq_policy *policy, unsigned int new_freq,
 
 	freqs.old = policy->cur;
 	freqs.new = new_freq;
-	freqs.cpu = policy->cpu;
 
 	trace_cpu_frequency_switch_start(freqs.old, freqs.new, policy->cpu);
 	cpufreq_freq_transition_begin(policy, &freqs);
@@ -123,7 +122,7 @@ static unsigned int msm_cpufreq_resolve_freq(struct cpufreq_policy *policy,
 	return freq;
 }
 
-static int msm_cpufreq_verify(struct cpufreq_policy *policy)
+static int msm_cpufreq_verify(struct cpufreq_policy_data *policy)
 {
 	cpufreq_verify_within_limits(policy, policy->cpuinfo.min_freq,
 			policy->cpuinfo.max_freq);
@@ -319,13 +318,14 @@ static void msm_cpufreq_ready(struct cpufreq_policy *policy)
 	 * thermal DT code takes care of matching them.
 	 */
 	if (of_find_property(np, "#cooling-cells", NULL)) {
-		cdev[cpu] = cpufreq_platform_cooling_register(policy, NULL);
+		cdev[cpu] = of_cpufreq_cooling_register(policy);
 		if (IS_ERR(cdev[cpu])) {
 			pr_err("running cpufreq for CPU%d without cooling dev: %ld\n",
 			       cpu, PTR_ERR(cdev[cpu]));
 			cdev[cpu] = NULL;
 		}
 	}
+
 	of_node_put(np);
 }
 

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  *  drivers/cpufreq/cpufreq_conservative.c
  *
@@ -5,10 +6,6 @@
  *            (C)  2003 Venkatesh Pallipadi <venkatesh.pallipadi@intel.com>.
  *                      Jun Nakajima <jun.nakajima@intel.com>
  *            (C)  2009 Alexander Clouter <alex@digriz.org.uk>
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
  */
 
 #include <linux/slab.h>
@@ -314,17 +311,6 @@ static void cs_start(struct cpufreq_policy *policy)
 	dbs_info->requested_freq = policy->cur;
 }
 
-static void cs_limits(struct cpufreq_policy *policy)
-{
-	struct cs_policy_dbs_info *dbs_info = to_dbs_info(policy->governor_data);
-
-	/*
-	 * The limits have changed, so may have the current frequency. Reset
-	 * requested_freq to avoid any unintended outcomes due to the mismatch.
-	 */
-	dbs_info->requested_freq = policy->cur;
-}
-
 static struct dbs_governor cs_governor = {
 	.gov = CPUFREQ_DBS_GOVERNOR_INITIALIZER("conservative"),
 	.kobj_type = { .default_attrs = cs_attributes },
@@ -334,7 +320,6 @@ static struct dbs_governor cs_governor = {
 	.init = cs_init,
 	.exit = cs_exit,
 	.start = cs_start,
-	.limits = cs_limits,
 };
 
 #define CPU_FREQ_GOV_CONSERVATIVE	(&cs_governor.gov)
@@ -361,7 +346,7 @@ struct cpufreq_governor *cpufreq_default_governor(void)
 	return CPU_FREQ_GOV_CONSERVATIVE;
 }
 
-fs_initcall(cpufreq_gov_dbs_init);
+core_initcall(cpufreq_gov_dbs_init);
 #else
 module_init(cpufreq_gov_dbs_init);
 #endif

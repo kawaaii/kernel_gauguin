@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: GPL-2.0-only
 /*
  * drivers/cpufreq/cpufreq_governor.c
  *
@@ -8,10 +9,6 @@
  *		(C) 2003 Jun Nakajima <jun.nakajima@intel.com>
  *		(C) 2009 Alexander Clouter <alex@digriz.org.uk>
  *		(c) 2012 Viresh Kumar <viresh.kumar@linaro.org>
- *
- * This program is free software; you can redistribute it and/or modify
- * it under the terms of the GNU General Public License version 2 as
- * published by the Free Software Foundation.
  */
 
 #define pr_fmt(fmt) KBUILD_MODNAME ": " fmt
@@ -347,7 +344,7 @@ static inline void gov_clear_update_util(struct cpufreq_policy *policy)
 	for_each_cpu(i, policy->cpus)
 		cpufreq_remove_update_util_hook(i);
 
-	synchronize_sched();
+	synchronize_rcu();
 }
 
 static struct policy_dbs_info *alloc_policy_dbs_info(struct cpufreq_policy *policy,
@@ -433,7 +430,7 @@ int cpufreq_dbs_governor_init(struct cpufreq_policy *policy)
 
 	ret = gov->init(dbs_data);
 	if (ret)
-		goto free_dbs_data;
+		goto free_policy_dbs_info;
 
 	/*
 	 * The sampling interval should not be less than the transition latency
@@ -460,15 +457,13 @@ int cpufreq_dbs_governor_init(struct cpufreq_policy *policy)
 	/* Failure, so roll back. */
 	pr_err("initialization failed (dbs_data kobject init error %d)\n", ret);
 
+	kobject_put(&dbs_data->attr_set.kobj);
+
 	policy->governor_data = NULL;
 
 	if (!have_governor_per_policy())
 		gov->gdbs_data = NULL;
-
-	kobject_put(&dbs_data->attr_set.kobj);
-	goto free_policy_dbs_info;
-
-free_dbs_data:
+	gov->exit(dbs_data);
 	kfree(dbs_data);
 
 free_policy_dbs_info:
@@ -560,7 +555,6 @@ EXPORT_SYMBOL_GPL(cpufreq_dbs_governor_stop);
 
 void cpufreq_dbs_governor_limits(struct cpufreq_policy *policy)
 {
-	struct dbs_governor *gov = dbs_governor_of(policy);
 	struct policy_dbs_info *policy_dbs;
 
 	/* Protect gov->gdbs_data against cpufreq_dbs_governor_exit() */
@@ -572,8 +566,6 @@ void cpufreq_dbs_governor_limits(struct cpufreq_policy *policy)
 	mutex_lock(&policy_dbs->update_mutex);
 	cpufreq_policy_apply_limits(policy);
 	gov_update_sample_delay(policy_dbs, 0);
-	if (gov->limits)
-		gov->limits(policy);
 	mutex_unlock(&policy_dbs->update_mutex);
 
 out:
