@@ -96,10 +96,7 @@ static int snooze_loop(struct cpuidle_device *dev,
 
 	HMT_medium();
 	ppc64_runlatch_on();
-
-	/* Avoid double clear when breaking */
-	if (!dev->poll_time_limit)
-		clear_thread_flag(TIF_POLLING_NRFLAG);
+	clear_thread_flag(TIF_POLLING_NRFLAG);
 
 	local_irq_disable();
 
